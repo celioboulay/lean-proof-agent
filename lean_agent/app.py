@@ -256,6 +256,7 @@ def _run_item(item: dict, max_iters: int, sys_prompt: str):
             "ts": time.time(),
             "kind": item["kind"],
         }
+        st.rerun()
     finally:
         _set_running(item_id, False)
 
@@ -276,16 +277,18 @@ def _disable_spellcheck_js():
     components.html(
         """
 <script>
-(function(){
+setTimeout(function(){
   const doc = parent.document;
-  const ta = doc.querySelectorAll('textarea');
-  ta.forEach(t => { t.spellcheck = false; });
-})();
+  const tas = doc.querySelectorAll('textarea');
+  tas.forEach(t => {
+    t.spellcheck = false;
+    t.setAttribute("spellcheck","false");
+  });
+}, 300);
 </script>
 """,
         height=0,
     )
-
 
 def _scroll_editor_to(label: str, start: int, end: int):
     safe_label = label.replace('"', '\\"')

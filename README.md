@@ -4,7 +4,7 @@ Latex to Lean4 automatic formalization of mathematical content. This project was
 
 Given a .tex file, the system extracts theorems and provided proofs, generates Lean code, compiles it locally, and reports whether the proof type-checks. Correctness is determined only by the Lean compiler
 
-
+![demo](data/sidebysideex.png)
 ---
 
 ## Setup
