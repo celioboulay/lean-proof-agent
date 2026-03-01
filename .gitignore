@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.tmp
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# Lean / Lake
+.lake/
+build/
+*.olean
+*.ilean
+lake-packages/
+lake-manifest.json
+Work.lean
+
+# macOS
+.DS_Store
+
+# VSCode
+.vscode/
+
+# Agent experimental folder
+agent/
+
+# Misc
+*.swp
+*.swo
