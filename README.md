@@ -13,10 +13,14 @@ Given a .tex file, the system extracts theorems and provided proofs, generates L
 - Lean 4
 - Unix system recommanded
 
+Lean installation [(elan)](https://github.com/leanprover/elan)
 ```
+curl https://elan.lean-lang.org/elan-init.sh -sSf | sh
 elan toolchain install leanprover/lean4:stable
 elan default leanprover/lean4:stable
 ```
+
+Setup environment:
 
 ```
 python -m venv .venv
@@ -31,14 +35,12 @@ export MISTRAL_API_KEY=your_key
 Build Lean once:
 
 ```
-cd lean
 lake build
-cd ..
 ```
 
 Run with
 ```
-streamlit run lean_agent/app.py
+streamlit run lean_agent/app.py --server.address 127.0.0.1
 ```
 
 ---
@@ -46,6 +48,8 @@ streamlit run lean_agent/app.py
 ## Process
 
 LaTeX → Parsing → LLM query → Lean code → Lean query → error feedback loop.
+
+To use another model, adapt api_client.py for other API / local models.
 
 ---
 
