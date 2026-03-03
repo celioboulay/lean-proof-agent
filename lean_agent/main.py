@@ -78,7 +78,7 @@ def one_attempt(problem_text: str, last_error: str, history: list[dict]):
     user = {
         "problem_text": problem_text,
         "last_error": last_error,
-        "previous_attempts": history[-3:], # feed the models it's previous mistakes
+        "previous_attempts": history[-3:], # feed the models its previous mistakes
     }
 
     try:

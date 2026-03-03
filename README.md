@@ -1,12 +1,12 @@
-## Verification Agent
+## Lean Verification Agent
 
-Latex to Lean4 automatic formalization of mathematical content. This project was started during Mistral Worldwide Hackathon (NYC location).
+Latex-to-Lean4 automatic formalization and verification of mathematical proofs. Started at the Mistral Worldwide Hackathon (NYC).
 
-Given a .tex file, the system extracts theorems and provided proofs, generates Lean code, compiles it locally, and reports whether the proof type-checks. Correctness is determined only by the Lean compiler
+Given a .tex file, the system extracts theorem/proof blocks, generates Lean4 code via an LLM backend (API or self-hosted), compiles it locally, and reports whether it type-checks. Correctness is decided solely by the Lean4 trusted kernel.
 
-![example1](data/sidebysideex.png)
+![schema](data/schema.svg)
 
-![example2](data/3ex.png)
+![example](data/example.png)
 
 ---
 
@@ -23,7 +23,7 @@ elan toolchain install leanprover/lean4:stable
 elan default leanprover/lean4:stable
 ```
 
-Setup environment:
+Python environment:
 
 ```
 python -m venv .venv
@@ -35,32 +35,28 @@ pip install -r requirements.txt
 export MISTRAL_API_KEY=your_key
 ```
 
-Build Lean once:
+To use another model, adapt api_client.py for other API / local models.
+
+Build Lean dependencies:
 
 ```
 lake build
 ```
 
-Run with
+Run the app with
 ```
 streamlit run lean_agent/app.py --server.address 127.0.0.1
 ```
-
----
-
-## Process
-
-LaTeX → Parsing → LLM query → Lean code → Lean query → error feedback loop.
-
-To use another model, adapt api_client.py for other API / local models.
+The frontend was vibecoded during a hackathon and may not be super safe.
+I recommended to run it locally and avoid exposing it to the public network.
 
 ---
 
 ## Future Work
 
-- I'll try to make it a VSCode extension
-- Parallel compilation could be useful, but have no idea yet how to do
+- I'll try to make it a VSCode extension.
+- Parallel compilation could be useful.
 
 Note that this is not tactic-level proof interaction (no info on the intermediate goals). It is also dependent on LLM quality (Mistral works well in our case).
 
-Props to Mistral, Iterate and all the staff for organizing the hackathon, providing us with tips, coffee and amazing food. 🫶
+Props to Mistral, Iterate and all the staff for organizing the hackathon, providing us with tips, coffee and food. 🫶
