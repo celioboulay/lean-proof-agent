@@ -1,16 +1,16 @@
 ## Lean Verification Agent
 
-Latex-to-Lean4 automatic formalization and verification of mathematical proofs. Started at the Mistral Worldwide Hackathon (NYC).
+*2nd place - Mistral AI Hackathon (NYC)*
+
+Latex-to-Lean4 automatic formalization and verification of mathematical proofs.
 
 Given a .tex file, the system extracts theorem/proof blocks, generates Lean4 code via an LLM backend (API or self-hosted), compiles it locally, and reports whether it type-checks. Correctness is decided solely by the Lean4 trusted kernel.
 
 ![schema](data/schema.svg)
 
-![example](data/example.png)
-
 ---
 
-## Setup
+### Setup
 
 - Python 3.10+
 - Lean 4
@@ -47,16 +47,17 @@ Run the app with
 ```
 streamlit run lean_agent/app.py --server.address 127.0.0.1
 ```
-The frontend was vibecoded during a hackathon and may not be super safe.
+The frontend was largely vibecoded during a hackathon and may not be super safe.
+I tried to add some safety checks, but this is not hardened software.
 I recommended to run it locally and avoid exposing it to the public network.
 
 ---
 
-## Future Work
+### Future Work
 
-- I'll try to make it a VSCode extension.
+- I'll try to turn it into a VSCode extension.
 - Parallel compilation could be useful.
 
-Note that this is not tactic-level proof interaction (no info on the intermediate goals). It is also dependent on LLM quality (Mistral works well in our case).
+Note that this is not tactic-level proof interaction (no info on the intermediate goals). It is also dependent on LLM quality (Mistral works well here).
 
-Props to Mistral, Iterate and all the staff for organizing the hackathon, providing us with tips, coffee and food. 🫶
+Props to Mistral, Iterate and all the staff and sponsors for organizing the hackathon and providing us with tips, coffee, and food. 🫶

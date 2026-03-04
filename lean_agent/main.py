@@ -6,7 +6,7 @@ from api_client import chat_json, repair_json
 
 BASE_DIR = Path(__file__).resolve().parent
 
-def _find_project_root(start: Path) -> Path:
+def _find_project_root(start: Path) -> Path: # locate the project root (lakefile)
     for p in [start] + list(start.parents):
         if (p / "lakefile.lean").exists() or (p / "lakefile.toml").exists():
             return p
@@ -36,7 +36,7 @@ FORBIDDEN_SUBSTRINGS = (
     "set_option",
 )
 
-
+# write_file assembles and writes the Lean file that will be compiled
 def write_file(imports: str, theorem_statement: str, proof: str, helpers: str):
     text = TEMPLATE.format(
         imports=imports.strip(),
@@ -47,7 +47,8 @@ def write_file(imports: str, theorem_statement: str, proof: str, helpers: str):
     text = text.replace("\ufeff", "")
     LEAN_FILE.write_text(text, encoding="utf-8")
 
-
+# clean and deduplicate import lines produced by the model
+# imports hallucinations are frequent, maybe use RAG and more constraints
 def _normalize_imports(imports: str) -> str:
     lines = [ln.strip() for ln in (imports or "").splitlines() if ln.strip()]
     lines = list(dict.fromkeys(lines))
@@ -59,7 +60,7 @@ def _imports_error(imports: str) -> str | None:
     if "import Mathlib.Tactic" not in lines:
         return "imports must include: import Mathlib.Tactic"
     for ln in lines:
-        if ln == "import Mathlib":
+        if ln == "import Mathlib": # including Mathlib significantly increases the compilation time
             return "imports must NOT include: import Mathlib"
         if not ln.startswith("import "):
             return "imports must contain only import lines"
@@ -78,7 +79,7 @@ def one_attempt(problem_text: str, last_error: str, history: list[dict]):
     user = {
         "problem_text": problem_text,
         "last_error": last_error,
-        "previous_attempts": history[-3:], # feed the models its previous mistakes
+        "previous_attempts": history[-3:], # feed the models its previous mistakes. 3 by default
     }
 
     try:
@@ -109,7 +110,7 @@ def one_attempt(problem_text: str, last_error: str, history: list[dict]):
 
     return obj
 
-
+# Main loop: propose → validate → compile → feed compiler errors back to the LLM
 def solve(problem_text: str, max_iters: int = 10):
     history = []
     last_error = ""
@@ -227,11 +228,11 @@ def solve(problem_text: str, max_iters: int = 10):
     return False
 
 
-def main():
-    print("Paste a math statement/exercise in plain text. End with an empty line.\n")
+def main(): 
+    print("Paste a math statement (plain text).\n")
     lines = []
     while True:
-        line = input()
+        line = input() # Minimal CLI entry point for quick local testing
         if line.strip() == "":
             break
         lines.append(line)

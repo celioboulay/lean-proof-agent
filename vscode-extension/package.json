@@ -1,0 +1,17 @@
+{
+  "name": "lean-proof-agent",
+  "displayName": "Lean Proof Agent",
+  "description": "VSCode integration",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "leanAgent.verify",
+        "title": "Verify LaTeX proof with Lean"
+      }
+    ]
+  }
+}

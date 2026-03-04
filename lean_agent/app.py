@@ -1,3 +1,9 @@
+# NOTE
+# The frontend was largely vibecoded during the hackathon.
+# I tried to add some safety checks, but this is not hardened software.
+# Sending arbitrary .tex files is not super safe either.
+# Run locally and don't expose it publicly.
+
 import os
 import json
 import time
@@ -358,21 +364,13 @@ def _build_pdf(tex_src: str) -> tuple[str, str]:
 SAMPLE_TEX = r"""
 \section{Tiny demo note}
 
-This is a minimal snippet (no preamble required here). The app detects theorem-like blocks
-and generates Lean formalizations checked by the compiler.
+The app detects theorem-like blocks and generates Lean formalizations checked by the compiler.
 
 \begin{theorem}[Order on $\mathbb{R}$]
 If $x \ge 1$ then $x \ge 0$.
 \end{theorem}
 \begin{proof}
 We know $1 \ge 0$. Together with $x \ge 1$, transitivity gives $x \ge 0$.
-\end{proof}
-
-\begin{lemma}[Zero is a left identity]
-For all natural numbers $n$, we have $0 + n = n$.
-\end{lemma}
-\begin{proof}
-By induction on $n$.
 \end{proof}
 
 \begin{theorem}[A small algebraic identity]

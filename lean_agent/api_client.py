@@ -3,12 +3,12 @@ import json
 import re
 from typing import Any
 
-try:
+try: # issues with mistral SDK import paths
     from mistralai.client import Mistral
 except Exception:
     from mistralai import Mistral
 
-MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
+MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest") # other model possible via env variable
 API_KEY = os.getenv("MISTRAL_API_KEY") # please don't hardcode any API key
 
 if not API_KEY:
@@ -16,7 +16,7 @@ if not API_KEY:
 
 client = Mistral(api_key=API_KEY)
 
-
+# normalize response formats returned by the API into plain text
 def _flatten_content(content: Any) -> str:
     if content is None:
         return ""
@@ -44,6 +44,7 @@ def _flatten_content(content: Any) -> str:
     return str(content)
 
 
+# remove md code fences (model may wrap the JSON)
 def _strip_fences(text: str) -> str:
     t = text.strip()
     if t.startswith("```"):
@@ -52,6 +53,7 @@ def _strip_fences(text: str) -> str:
     return t.strip()
 
 
+# find JSON in noisy response
 def _extract_first_json_object(text: str) -> str:
     s = text
     start = s.find("{")
@@ -69,6 +71,7 @@ def _extract_first_json_object(text: str) -> str:
     raise ValueError
 
 
+# parse model output into a JSON dict
 def _to_json(content: Any) -> dict:
     text = _strip_fences(_flatten_content(content))
     try:
@@ -84,6 +87,7 @@ def _to_json(content: Any) -> dict:
         raise ValueError(f"Invalid JSON response:\n{text}") from e
 
 
+# wrapper around the Mistral chat API to guarante a JSON dict
 def chat_json(messages, max_tokens=1400, temperature=0.1) -> dict:
     resp = client.chat.complete(
         model=MODEL,
@@ -96,6 +100,7 @@ def chat_json(messages, max_tokens=1400, temperature=0.1) -> dict:
     return _to_json(resp.choices[0].message.content)
 
 
+# ask the model to repair bad JSON responses
 def repair_json(bad_text: str) -> dict:
     return chat_json(
         [

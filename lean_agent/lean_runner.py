@@ -8,6 +8,7 @@ class LeanResult:
     output: str
 
 def run_lean(project_root, lean_file):
+    # run Lean inside the lake environment to ensure the correct toolchain
     p = subprocess.run(
         ["lake", "env", "lean", "--json", lean_file],
         cwd=project_root,
@@ -15,6 +16,7 @@ def run_lean(project_root, lean_file):
         text=True,
     )
 
+    # Lean emits diagnostics as JSON lines on stdout/stderr
     raw = (p.stdout or "") + (p.stderr or "")
 
     errors = []
@@ -29,6 +31,7 @@ def run_lean(project_root, lean_file):
         if isinstance(msg, dict) and msg.get("severity") == "error":
             errors.append(msg)
 
+    # return structured errors if the type checker failed otherwise raw compiler output
     if errors:
         return LeanResult(False, json.dumps(errors, indent=2))
 
