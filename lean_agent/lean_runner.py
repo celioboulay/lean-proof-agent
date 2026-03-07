@@ -1,3 +1,8 @@
+# DEPRECATED
+# it was used when Lean was executed locally.
+# The project now relies on the Axiom API for proof checking. (improved from like 50s to 1s!!)
+# I keep it here since I may need it for some test, also idk about API rate limits, I may be cooked
+
 import subprocess
 import json
 from dataclasses import dataclass

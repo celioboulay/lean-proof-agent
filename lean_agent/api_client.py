@@ -88,7 +88,7 @@ def _to_json(content: Any) -> dict:
 
 
 # wrapper around the Mistral chat API to guarante a JSON dict
-def chat_json(messages, max_tokens=1400, temperature=0.1) -> dict:
+def chat_json(messages, max_tokens=3000, temperature=0.1) -> dict:
     resp = client.chat.complete(
         model=MODEL,
         messages=messages,
@@ -110,6 +110,5 @@ def repair_json(bad_text: str) -> dict:
             },
             {"role": "user", "content": bad_text},
         ],
-        max_tokens=800,
         temperature=0.0,
     )

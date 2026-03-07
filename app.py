@@ -3,74 +3,41 @@
 # I tried to add some safety checks, but this is not hardened software.
 # Sending arbitrary .tex files is not super safe either.
 # Run locally and don't expose it publicly.
+# I will make a clean version of it when I get time, or just switch to the VSCode extension?
 
 import os
 import json
+import asyncio
 import time
 import difflib
 import hashlib
 import re
-import base64
-import tempfile
-import subprocess
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Lean Paper Agent", layout="wide")
+st.set_page_config(
+    page_title="Lean Paper Agent",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
 try:
-    import main
+    from lean_agent import main
+    from lean_agent.axiom_api import verify_proof
 except Exception as e:
     st.error(f"Backend import failed: {e}")
     st.stop()
 
+try:
+    from streamlit_ace import st_ace
+except Exception:
+    st_ace = None
 
-CSS = """
-<style>
-:root{
-  --bg:#f6f7f9;
-  --panel:#ffffff;
-  --border:rgba(20,20,20,.10);
-  --muted:rgba(20,20,20,.55);
-  --shadow:0 1px 10px rgba(0,0,0,.04);
-  --radius:14px;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
-}
-.block-container{ padding-top:.8rem; background:var(--bg); }
-header[data-testid="stHeader"]{ background:var(--bg); }
-section[data-testid="stSidebar"]{ background:var(--bg); }
 
-.card{
-  background:var(--panel);
-  border:1px solid var(--border);
-  box-shadow:var(--shadow);
-  border-radius:var(--radius);
-  padding:12px;
-}
-
-.small{ color:var(--muted); font-size:.92rem; }
-.hr{ border-top:1px solid var(--border); margin:10px 0; }
-
-.badge{
-  display:inline-block; padding:6px 10px; border-radius:999px;
-  font-weight:700; font-size:.80rem; border:1px solid transparent; white-space:nowrap;
-}
-.badge-pending{ background:rgba(0,123,255,.10); color:rgb(0,82,204); border-color:rgba(0,123,255,.25); }
-.badge-ok{ background:rgba(40,167,69,.12); color:rgb(23,123,50); border-color:rgba(40,167,69,.25); }
-.badge-fail{ background:rgba(220,53,69,.10); color:rgb(176,35,50); border-color:rgba(220,53,69,.25); }
-
-div[data-testid="stTextArea"] textarea{
-  font-family:var(--mono)!important;
-  font-size:13px!important;
-  line-height:1.35!important;
-  border-radius:12px!important;
-}
-code, pre { font-family: var(--mono) !important; }
-</style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
+with open("frontend/style.css") as f:
+    st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 
 def _h(s: str) -> str:
@@ -158,6 +125,7 @@ def _parse_latex_envs(doc: str) -> list[dict]:
     return items
 
 
+@st.cache_data(show_spinner=False)
 def parse_document(doc: str) -> list[dict]:
     if any(x in doc for x in ("\\begin{theorem}", "\\begin{lemma}", "\\begin{proposition}", "\\begin{corollary}")):
         items = _parse_latex_envs(doc)
@@ -187,39 +155,61 @@ def run_loop(problem_text: str, max_iters: int, system_prompt: str):
         if not isinstance(obj, dict):
             obj = main.repair_json(json.dumps(obj))
 
-        theorem_statement = obj.get("theorem_statement", "")
-        proof = obj.get("proof", "")
-        helpers = obj.get("helpers", "")
-        imports = obj.get("imports", "")
+        theorem_statement = (obj.get("theorem_statement") or "").strip()
+        proof = (obj.get("proof") or "").strip()
+        helpers = (obj.get("helpers") or "").strip()
 
-        if not theorem_statement.startswith("theorem target") or not theorem_statement.strip().endswith(":="):
+        if not theorem_statement.startswith("theorem target") or not theorem_statement.endswith(":="):
             last_error = "Bad theorem_statement format. Must be: theorem target (...) : ... :="
             full_log += f"\nITER {i}\nFAIL (format)\n{last_error}\n"
             attempts.append({"iter": i, "status": "FAIL (format)", "time_s": time.perf_counter() - t_iter, "lean": _read_work_lean()})
+            history.append({"helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": last_error})
             continue
 
-        if not proof.strip().startswith("by"):
+        if not proof.startswith("by"):
             last_error = "Bad proof format. Must start with: by"
             full_log += f"\nITER {i}\nFAIL (format)\n{last_error}\n"
             attempts.append({"iter": i, "status": "FAIL (format)", "time_s": time.perf_counter() - t_iter, "lean": _read_work_lean()})
+            history.append({"helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": last_error})
             continue
 
-        main.write_file(imports, theorem_statement, proof, helpers)
+        if "import " in helpers:
+            last_error = "helpers must not contain import lines"
+            full_log += f"\nITER {i}\nFAIL (helpers)\n{last_error}\n"
+            attempts.append({"iter": i, "status": "FAIL (helpers)", "time_s": time.perf_counter() - t_iter, "lean": _read_work_lean()})
+            history.append({"helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": last_error})
+            continue
+
+        fe = main._forbidden_error("\n".join([main.IMPORTS, helpers, theorem_statement, proof]))
+        if fe:
+            last_error = fe
+            full_log += f"\nITER {i}\nFAIL (forbidden)\n{last_error}\n"
+            attempts.append({"iter": i, "status": "FAIL (forbidden)", "time_s": time.perf_counter() - t_iter, "lean": _read_work_lean()})
+            history.append({"helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": last_error})
+            continue
+
+        main.write_file(main.IMPORTS, theorem_statement, proof, helpers)
         lean_now = _read_work_lean()
 
-        res = main.run_lean(str(main.PROJECT_ROOT), str(main.LEAN_FILE))
-        tail = res.output[-2000:] if res.output else ""
-        full_log += f"\nITER {i}\n{tail}\n"
+        try:
+            res = asyncio.run(verify_proof(file=str(main.LEAN_FILE)))
+        except Exception as e:
+            last_error = str(e)
+            full_log += f"\nITER {i}\nFAIL (api)\n{last_error}\n"
+            attempts.append({"iter": i, "status": "FAIL (api)", "time_s": time.perf_counter() - t_iter, "lean": lean_now})
+            history.append({"helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": last_error})
+            continue
 
-        history.append({"imports": imports, "helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": res.output})
-        last_error = (res.output or "")[-2000:]
-
-        status = "VERIFIED" if res.ok else "FAIL (lean)"
-        attempts.append({"iter": i, "status": status, "time_s": time.perf_counter() - t_iter, "lean": lean_now})
-
-        if res.ok:
+        if res.okay:
+            full_log += f"\nITER {i}\nVERIFIED\n"
+            attempts.append({"iter": i, "status": "VERIFIED", "time_s": time.perf_counter() - t_iter, "lean": lean_now})
             elapsed_total = time.perf_counter() - t_start
             return True, full_log, attempts, elapsed_total
+
+        last_error = main._format_axle_output(res)
+        full_log += f"\nITER {i}\n{last_error[-2000:]}\n"
+        attempts.append({"iter": i, "status": "FAIL (lean)", "time_s": time.perf_counter() - t_iter, "lean": lean_now})
+        history.append({"helpers": helpers, "theorem_statement": theorem_statement, "proof": proof, "error": last_error})
 
     elapsed_total = time.perf_counter() - t_start
     return False, full_log, attempts, elapsed_total
@@ -228,8 +218,6 @@ def run_loop(problem_text: str, max_iters: int, system_prompt: str):
 def _reset_results():
     st.session_state["results"] = {}
     st.session_state["focus"] = None
-    st.session_state["pdf_b64"] = ""
-    st.session_state["pdf_log"] = ""
 
 
 def _set_running(item_id: str, val: bool):
@@ -241,7 +229,7 @@ def _is_running(item_id: str) -> bool:
     return bool(st.session_state.get("running", {}).get(item_id, False))
 
 
-def _run_item(item: dict, max_iters: int, sys_prompt: str):
+def _run_item(item: dict, max_iters: int, sys_prompt: str, do_rerun=True):
     item_id = item["id"]
     if _is_running(item_id):
         return
@@ -262,7 +250,8 @@ def _run_item(item: dict, max_iters: int, sys_prompt: str):
             "ts": time.time(),
             "kind": item["kind"],
         }
-        st.rerun()
+        if do_rerun:
+            st.rerun()
     finally:
         _set_running(item_id, False)
 
@@ -289,76 +278,37 @@ setTimeout(function(){
   tas.forEach(t => {
     t.spellcheck = false;
     t.setAttribute("spellcheck","false");
+    t.setAttribute("autocorrect","off");
+    t.setAttribute("autocapitalize","off");
   });
-}, 300);
-</script>
-""",
-        height=0,
-    )
-
-def _scroll_editor_to(label: str, start: int, end: int):
-    safe_label = label.replace('"', '\\"')
-    components.html(
-        f"""
-<script>
-(function(){{
-  const doc = parent.document;
-  const ta = doc.querySelector('textarea[aria-label="{safe_label}"]');
-  if(!ta) return;
-  ta.focus();
-  try {{
-    ta.setSelectionRange({start}, {end});
-  }} catch(e) {{}}
-  const before = ta.value.slice(0, {start});
-  const line = (before.match(/\\n/g) || []).length + 1;
-  const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
-  ta.scrollTop = Math.max(0, (line - 4) * lh);
-}})();
+}, 50);
 </script>
 """,
         height=0,
     )
 
 
-def _wrap_for_pdf(tex_body: str) -> str:
-    if "\\documentclass" in tex_body:
-        return tex_body
-    return r"""\documentclass{article}
-\usepackage{amsmath,amsthm,amssymb}
-\newtheorem{theorem}{Theorem}
-\newtheorem{lemma}{Lemma}
-\newtheorem{proposition}{Proposition}
-\newtheorem{corollary}{Corollary}
-\begin{document}
-""" + "\n" + tex_body + "\n\\end{document}\n"
+def _render_editor() -> str:
+    if st_ace is not None:
+        value = st_ace(
+            value=st.session_state["doc"],
+            language="latex",
+            theme="textmate",
+            keybinding="vscode",
+            font_size=14,
+            tab_size=2,
+            show_gutter=True,
+            show_print_margin=False,
+            wrap=True,
+            auto_update=True,
+            min_lines=45,
+            max_lines=45,
+            key="latex_editor",
+        )
+        return st.session_state["doc"] if value is None else value
 
-
-def _build_pdf(tex_src: str) -> tuple[str, str]:
-    with tempfile.TemporaryDirectory() as td:
-        p = Path(td) / "main.tex"
-        p.write_text(tex_src, encoding="utf-8")
-        try:
-            r = subprocess.run(
-                [
-                    "pdflatex",
-                    "-interaction=nonstopmode",
-                    "-halt-on-error",
-                    "-no-shell-escape",   # ← very very important (aled)
-                    "-output-directory",
-                    td,
-                    str(p),
-                ],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            return "", "pdflatex not found. Install MacTeX (or TeX Live) to enable PDF preview."
-        log = (r.stdout or "") + "\n" + (r.stderr or "")
-        pdf = Path(td) / "main.pdf"
-        if r.returncode != 0 or not pdf.exists():
-            return "", log[-4000:]
-        b64 = base64.b64encode(pdf.read_bytes()).decode("ascii")
-        return b64, log[-4000:]
+    _disable_spellcheck_js()
+    return st.text_area("main.tex", value=st.session_state["doc"], height=760, label_visibility="collapsed")
 
 
 SAMPLE_TEX = r"""
@@ -385,8 +335,6 @@ Rewrite using the hypothesis $a=b$.
 st.title("Lean Paper Agent")
 st.caption("Edit a .tex snippet like Overleaf, detect theorem blocks, run per-result formalization, inspect Lean/logs/diffs.")
 
-_disable_spellcheck_js()
-
 if not os.getenv("MISTRAL_API_KEY"):
     st.warning("MISTRAL_API_KEY not set. UI works, but runs will fail.")
 
@@ -395,8 +343,6 @@ st.session_state.setdefault("sys_prompt", main.SYSTEM)
 st.session_state.setdefault("results", {})
 st.session_state.setdefault("upload_hash", "")
 st.session_state.setdefault("focus", None)
-st.session_state.setdefault("pdf_b64", "")
-st.session_state.setdefault("pdf_log", "")
 st.session_state.setdefault("max_iters", 8)
 
 with st.sidebar:
@@ -421,59 +367,44 @@ with st.sidebar:
         if st.button("Clear", use_container_width=True):
             _reset_results()
 
-
-
     st.markdown("### Agent")
-    st.caption("Constraints always ON: Lean 4 indentation + no fake imports.")
     if st.checkbox("Show SYSTEM prompt", value=False):
         st.session_state["sys_prompt"] = st.text_area("SYSTEM", value=st.session_state["sys_prompt"], height=260)
 
-
-
     st.session_state["max_iters"] = st.slider("Max iters / item", 1, 20, int(st.session_state["max_iters"]))
-
-
-
-    if st.button("Build PDF preview", use_container_width=True):
-        b64, lg = _build_pdf(_wrap_for_pdf(st.session_state["doc"]))
-        st.session_state["pdf_b64"] = b64
-        st.session_state["pdf_log"] = lg
-        if b64:
-            st.success("PDF built.")
-        else:
-            st.error("PDF build failed.")
 
     st.caption(f"Backend writes to: {main.LEAN_FILE}")
 
-left, right = st.columns([1.15, 1], gap="large")
+left, right = st.columns([1.6, 1.1], gap="large")
+
+
 
 with left:
-    st.markdown("#### main.tex")
-    st.caption("Tip: click a theorem on the right to jump + select it here.")
-    doc = st.text_area("main.tex", value=st.session_state["doc"], height=560)
+    st.markdown('<div class="editor-label">main.tex</div>', unsafe_allow_html=True)
+    doc = _render_editor()
     st.session_state["doc"] = doc
-    st.markdown("</div>", unsafe_allow_html=True)
+
+
 
 with right:
-    tab_res, tab_pdf = st.tabs(["Detected results", "Preview (PDF)"])
+    items = parse_document(st.session_state["doc"])
+    st.markdown("#### Results")
+    st.markdown(f'<div class="small results-title">Found <b>{len(items)}</b> block(s).</div>', unsafe_allow_html=True)
 
-    with tab_res:
-        items = parse_document(st.session_state["doc"])
-        top1, top2, top3 = st.columns([1.2, 1.2, 1.6])
+    with st.expander("Detected results", expanded=True):
+        top1, top2 = st.columns([1.15, 1.1])
         with top1:
             run_all = st.button("Run all", use_container_width=True)
         with top2:
             show_only_failed = st.checkbox("Show only failed", value=False)
-        with top3:
-            st.markdown(f'<div class="small">Found <b>{len(items)}</b> block(s).</div>', unsafe_allow_html=True)
 
         if not items:
             st.info("No theorem/lemma/proposition/corollary blocks detected.")
-            st.markdown("</div>", unsafe_allow_html=True)
         else:
             if run_all:
                 for it in items:
-                    _run_item(it, int(st.session_state["max_iters"]), st.session_state["sys_prompt"])
+                    _run_item(it, int(st.session_state["max_iters"]), st.session_state["sys_prompt"], False)
+                st.rerun()
 
             results = st.session_state.get("results", {})
 
@@ -491,22 +422,14 @@ with right:
 
                 status = "PENDING" if res is None else ("VERIFIED" if res.get("ok") else "FAIL")
 
-                row = st.columns([3.3, 1.1, 0.9, 1.0])
+                row = st.columns([3.4, 1.1, 1.0])
                 with row[0]:
                     st.markdown(f"**{title}** — {preview}")
                 with row[1]:
                     st.markdown(_badge_html(status), unsafe_allow_html=True)
                 with row[2]:
-                    if st.button("View", key=f"view_{rid}", use_container_width=True):
-                        st.session_state["focus"] = {"label": "main.tex", "span": it["span_full"], "rid": rid}
-                with row[3]:
                     if st.button("Run", key=f"run_{rid}", disabled=_is_running(rid), use_container_width=True):
                         _run_item(it, int(st.session_state["max_iters"]), st.session_state["sys_prompt"])
-
-                focus = st.session_state.get("focus")
-                if isinstance(focus, dict) and focus.get("rid") == rid:
-                    s, e = it["span_full"]
-                    _scroll_editor_to("main.tex", int(s), int(e))
 
                 with st.expander("Details", expanded=False):
                     tabs = st.tabs(["Lean", "Log", "Diff", "Attempts"])
@@ -534,29 +457,3 @@ with right:
                             st.code("\n".join(d), language="diff")
                     with tabs[3]:
                         st.table([] if res is None else _attempts_table(res.get("attempts", [])))
-
-  
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    with tab_pdf:
-
-        if st.session_state.get("pdf_b64"):
-            b64 = st.session_state["pdf_b64"]
-            components.html(
-                f"""
-<iframe
-  src="data:application/pdf;base64,{b64}"
-  width="100%"
-  height="740"
-  style="border:1px solid rgba(20,20,20,.10); border-radius:12px;">
-</iframe>
-""",
-                height=760,
-            )
-        else:
-            st.info("Click “Build PDF preview” in the sidebar. If you don’t have pdflatex, install MacTeX.")
-        if st.session_state.get("pdf_log"):
-            with st.expander("Build log", expanded=False):
-                st.code(st.session_state["pdf_log"], language="text")
-        st.markdown("</div>", unsafe_allow_html=True)

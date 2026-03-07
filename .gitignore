@@ -8,13 +8,11 @@ __pycache__/
 
 # Virtual env
 .venv/
-venv/
-env/
 
 # Streamlit
 .streamlit/
 
-# Lean / Lake
+# Lean / Lake not needed anymore but I'll keep it 
 .lake/
 build/
 *.olean
